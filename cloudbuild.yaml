@@ -1,0 +1,66 @@
+steps:
+
+  - id: Deploy to cluster in Kubernetes Engine cluster.
+    name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'apply'
+      - '-f'
+      - 'kubernetes.yaml'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=asia-northeast1-a'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=cluster'
+
+  - id: Access the id_github file from secret manager
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=secret-name > /root/.ssh/id_github
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
+
+  - id: Set up git with key and domain
+    name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        chmod 600 /root/.ssh/id_github
+        cat <<EOF >/root/.ssh/config
+        Hostname github.com
+        IdentityFile /root/.ssh/id_github
+        EOF
+        ssh-keyscan -t rsa github.com > /root/.ssh/known_hosts
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
+
+  - id: Clone Github repository
+    name: 'gcr.io/cloud-builders/git'
+    args:
+      - clone
+      - --recurse-submodules
+      - git@github.com:daisuke0724/cloudbuild-env
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
+
+  - id: Copy to production branch
+    name: 'gcr.io/cloud-builders/git'
+    entrypoint: 'bash'
+    dir: cloudbuild-env
+    args:
+      - '-c'
+      - |
+        set -x && \
+        git config --global user.email $(git log --format='%an <%ae>' -n 1 HEAD | sed 's/.*\<\([^>]*\)\>.*/\1/g') && \
+        git fetch origin production && \
+        git checkout production && \
+        git checkout $COMMIT_SHA kubernetes.yaml && \
+        git commit -m "Manifest from commit $COMMIT_SHA $(git log --format=%B -n 1 $COMMIT_SHA)" && \
+        git push origin production
+    volumes:
+      - name: 'ssh'
+        path: /root/.ssh
