@@ -1,4 +1,4 @@
-# cloudbuild-app
+# cloudbuild-env
 
 Google Cloud Platform(GCP) 版  
 GitOps 検証用 Env リポジトリ  
